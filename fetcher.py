@@ -3,6 +3,7 @@
 # vim: sw=4 ts=4 expandtab ai
 
 import hashlib
+import logging
 import lxml.html
 import psycopg2
 import ssl
@@ -19,6 +20,8 @@ MAX_PAGE_NO = 20
 NO_VERIFY_CTX = ssl.create_default_context()
 NO_VERIFY_CTX.check_hostname = False
 NO_VERIFY_CTX.verify_mode = ssl.CERT_NONE
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)2s %(levelname)-8s %(message)s')
 
 
 class NewsData(object):
@@ -51,11 +54,11 @@ def get_page(page_num):
         return req.read()
 
 while True:
-    print('Loading database config from {}...'.format(DB_CONFIG_PATH))
+    logging.info('Loading database config from %s...', DB_CONFIG_PATH)
     with open(DB_CONFIG_PATH) as f:
         db_config = yaml.safe_load(f)
 
-    print('Connecting to database...')
+    logging.info('Connecting to database...')
     db_conn = psycopg2.connect(
         dbname=db_config['database'],
         user=db_config['user'],
@@ -67,24 +70,23 @@ while True:
 
     cur.execute('select max(date_created) from newsfeed_imports;')
     last_imported_date = cur.fetchone()[0]
-    print('Last imported news in database are from {}'.format(last_imported_date.strftime('%Y-%m-%d')))
+    logging.info('Last imported news in database are from %s', last_imported_date.strftime('%Y-%m-%d'))
 
     cur.execute('select cron_schedule, cron_value from newsfeed_settings;')
     time_unit, cron_value = cur.fetchone()
     time_unit += 's'
     time_to_sleep = timedelta(**{time_unit: cron_value})
 
-    print('Starting fetch')
+    logging.info('Starting fetch')
     
     imported_news = []
     for p in range(0, MAX_PAGE_NO + 1):
         page_data = get_page(p)
-        print()
-        print('Successfully loaded page #{} (response length = {})'.format(p, len(page_data)))
+        logging.info('\nSuccessfully loaded page #%d (response length = %d)', p, len(page_data))
 
         doc = lxml.html.fromstring(page_data)
         news = doc.find_class('contextual-links-region')
-        print('News quantity on page #{}: {}'.format(p, len(news)))
+        logging.info('News quantity on page #%d: %d', p, len(news))
 
         import_candidates = []
         for news_elem in news:
@@ -92,7 +94,7 @@ while True:
             if nd.date_created >= last_imported_date:
                 import_candidates.append(nd)
 
-        print('Found {} candidates to import from page #{}'.format(len(import_candidates), p))
+        logging.info('Found %d candidates to import from page #%d', len(import_candidates), p)
         if len(import_candidates) < 1:
             break
         imported_news.extend(import_candidates)
@@ -107,21 +109,23 @@ while True:
             imported += 1
         else:
             existing += 1
-    print()
-    print('Successfully imported {} news, {} news were already existing in database'.format(
-        imported, existing
-    ))
+    logging.info(
+        '\nSuccessfully imported %d news, %d news were already existing in database',
+        imported,
+        existing
+    )
     if imported:
-        print('Commiting changes...')
+        logging.warning('Commiting changes...')
         db_conn.commit()
 
     cur.close()
     db_conn.close()
-    print('Next fetch will be done in {} {} ({:.0f} seconds)'.format(
+    logging.info(
+        'Next fetch will be done in %d %s (%d seconds)',
         cron_value,
         time_unit,
         time_to_sleep.total_seconds()
-    ))
+    )
     time.sleep(time_to_sleep.total_seconds())
 
 
