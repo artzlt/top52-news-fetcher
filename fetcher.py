@@ -33,9 +33,10 @@ class NewsData(object):
             html_item.find_class('views-field views-field-created')[0].text_content().strip(),
             '%d.%m.%Y'
         ).date()
+        type_field = html_item.find_class('field-content newstype-field')
         self.tags = [a.text_content().strip() for a in 
-            html_item.find_class('field-content newstype-field')[0].findall('.//a')
-        ]
+            type_field[0].findall('.//a')
+        ] if type_field else []
         self.digest = hashlib.sha1(self.title.encode()).hexdigest()
 
     def insert_query(self):
